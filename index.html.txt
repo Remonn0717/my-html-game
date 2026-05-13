@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Dice Match Empire - Infinity</title>
+    <style>
+        :root { --gold: #f1c40f; --blue: #3498db; --green: #2ecc71; --red: #e74c3c; --bg: #0f0f0f; }
+        body { background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; text-align: center; margin: 0; padding-bottom: 100px; overflow-x: hidden; }
+        
+        /* ヘッダーエリア */
+        .stats-bar { background: #1a1a1a; padding: 10px; display: flex; justify-content: space-around; sticky: top; border-bottom: 2px solid #333; font-weight: bold; }
+        .money-display { font-size: 4.5rem; color: var(--green); margin: 15px 0; font-weight: 900; text-shadow: 0 0 25px rgba(46,204,113,0.3); }
+        .prestige-display { color: #9b59b6; font-size: 1.2rem; }
+
+        /* ダイステーブル */
+        .table { 
+            width: 90%; max-width: 900px; min-height: 300px; background: radial-gradient(circle, #2c3e50, #000); 
+            margin: 20px auto; border-radius: 40px; border: 10px solid #333; position: relative;
+            display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; padding: 30px;
+            box-shadow: inset 0 0 50px #000;
+        }
+        .dice {
+            width: 75px; height: 75px; background: white; color: #222; border-radius: 12px;
+            font-size: 2.8rem; font-weight: bold; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 8px 15px rgba(0,0,0,0.5); cursor: pointer; border: 3px solid #ccc; transition: 0.1s;
+        }
+        .dice.skin-gold { background: linear-gradient(135deg, #fceabb, #f1c40f); border-color: #d4af37; color: #5d4037; }
+        .dice.skin-dark { background: #333; color: #fff; border-color: #555; }
+
+        /* ショップ・やり込みUI */
+        .main-container { display: flex; flex-direction: column; align-items: center; gap: 30px; padding: 20px; }
+        .grid-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; width: 100%; max-width: 1200px; }
+        
+        .panel { background: #1a1a1a; padding: 20px; border-radius: 15px; border: 1px solid #333; }
+        .panel h3 { margin-top: 0; border-bottom: 2px solid var(--blue); padding-bottom: 10px; color: var(--blue); }
+        
+        .item { background: #262626; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .info { text-align: left; }
+        .name { font-weight: bold; display: block; }
+        .desc { font-size: 0.75rem; color: #888; }
+        
+        .btn { padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-buy { background: var(--green); color: white; }
+        .btn-buy:disabled { background: #444; color: #777; cursor: not-allowed; }
+        .btn-prestige { background: #9b59b6; color: white; padding: 15px 40px; font-size: 1.5rem; margin-top: 20px; }
+        
+        /* 実績通知 */
+        #achievement { position: fixed; top: -100px; left: 50%; transform: translateX(-50%); background: var(--gold); color: #000; padding: 15px 30px; border-radius: 50px; font-weight: bold; transition: 0.5s; z-index: 1000; box-shadow: 0 10px 30px rgba(241,196,15,0.4); }
+    </style>
+</head>
+<body>
+
+    <div id="achievement">実績解除: </div>
+
+    <div class="stats-bar">
+        <span>転生回数: <span id="stat-prestige">0</span></span>
+        <span class="prestige-display">神の欠片 (倍率): ×<span id="stat-multiplier">1.0</span></span>
+        <span>最高記録: ¥<span id="stat-max">0</span></span>
+    </div>
+
+    <div class="money-display">¥<span id="money">0</span></div>
+
+    <div class="table" id="diceTable"></div>
+
+    <div id="gameLog" style="font-size:1.5rem; color:var(--gold); font-weight:bold; height: 1.6em;">極限まで効率を高めよ</div>
+
+    <div class="main-container">
+        <!-- 転生セクション -->
+        <div id="prestige-panel" style="display:none;">
+            <button class="btn btn-prestige" onclick="prestige()">世界を再構築する<br><small style="font-size:0.8rem">すべての資産を失い、全報酬を+100%永久強化</small></button>
+        </div>
+
+        <div class="grid-layout">
+            <!-- 強化カテゴリー -->
+            <div class="panel">
+                <h3>🚀 収益システム</h3>
+                <div id="shop-base"></div>
+            </div>
+
+            <div class="panel">
+                <h3>🛠️ 設備投資</h3>
+                <div id="shop-gear"></div>
+            </div>
+
+            <div class="panel">
+                <h3>🏆 称号と試練</h3>
+                <div id="shop-special"></div>
+                <div style="margin-top:20px; text-align:left; font-size:0.8rem; color:#888;">
+                    <b>現在のスキン:</b> 
+                    <select id="skinSelect" onchange="changeSkin(this.value)" style="background:#333; color:white; border:none; padding:5px;">
+                        <option value="default">ホワイト</option>
+                        <option value="skin-gold" id="opt-gold" disabled>黄金（未開放）</option>
+                        <option value="skin-dark" id="opt-dark" disabled>漆黒（未開放）</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    let state = {
+        money: 0, maxMoney: 0, prestigeCount: 0, prestigeMult: 1.0,
+        diceCount: 2, isAnyRolling: false, rollingStates: [], values: [], 
+        currentSkin: 'default',
+        lv: { base:0, value:0, super6:0, luck:0, auto:0, speed:0, diceCount:2, insurance:0, risk:0, triple:0 },
+        cost: { base:1000, value:5000, super6:50000, luck:8000, auto:3000, speed:6000, diceCount:10000, insurance:15000, risk:100000, triple:200000 }
+    };
+
+    const shopItems = [
+        { id: 'base', cat: 'shop-base', name: '特許取得', desc: '全ペア報酬+¥200', growth: 1.8 },
+        { id: 'value', cat: 'shop-base', name: 'ブランディング', desc: '全報酬+15%', growth: 2.2 },
+        { id: 'super6', cat: 'shop-base', name: '究極の6', desc: '6の配当を特大強化', growth: 2.5 },
+        { id: 'diceCount', cat: 'shop-gear', name: 'ダイス増設', desc: '最大20個まで', growth: 3.5 },
+        { id: 'auto', cat: 'shop-gear', name: '全自動マイニング', desc: '振る速度を向上', growth: 2.0 },
+        { id: 'speed', cat: 'shop-gear', name: 'クロックアップ', desc: '演出時間を短縮', growth: 2.1 },
+        { id: 'luck', cat: 'shop-special', name: '確率操作', desc: '6の出現率を微増', growth: 2.0 },
+        { id: 'insurance', cat: 'shop-special', name: 'ベンチャー保険', desc: 'ハズレ時の返金を強化', growth: 2.2 },
+        { id: 'risk', cat: 'shop-special', name: '闇の契約', desc: '超絶強化(30%)と破産リスク', growth: 3.0 },
+        { id: 'triple', cat: 'shop-special', name: '三位一体', desc: '3つ以上の揃いを倍加', growth: 2.8 }
+    ];
+
+    function initShop() {
+        shopItems.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'item';
+            div.innerHTML = `
+                <div class="info">
+                    <span class="name">${item.name} <small>(Lv <span id="lv-${item.id}">0</span>)</small></span>
+                    <span class="desc">${item.desc}</span>
+                </div>
+                <button class="btn btn-buy" id="buy-${item.id}" onclick="buy('${item.id}', ${item.growth})">¥<span id="cost-${item.id}">0</span></button>
+            `;
+            document.getElementById(item.cat).appendChild(div);
+        });
+    }
+
+    function updateUI() {
+        document.getElementById('money').textContent = Math.floor(state.money).toLocaleString();
+        document.getElementById('stat-prestige').textContent = state.prestigeCount;
+        document.getElementById('stat-multiplier').textContent = state.prestigeMult.toFixed(1);
+        document.getElementById('stat-max').textContent = Math.floor(state.maxMoney).toLocaleString();
+        
+        shopItems.forEach(item => {
+            document.getElementById(`lv-${item.id}`).textContent = state.lv[item.id];
+            document.getElementById(`cost-${item.id}`).textContent = state.cost[item.id].toLocaleString();
+            document.getElementById(`buy-${item.id}`).disabled = state.money < state.cost[item.id];
+        });
+
+        // 転生パネルの表示 (100万以上で解禁)
+        document.getElementById('prestige-panel').style.display = state.maxMoney >= 1000000 ? 'block' : 'none';
+        
+        // スキン解禁チェック
+        if (state.prestigeCount >= 1) { document.getElementById('opt-gold').disabled = false; document.getElementById('opt-gold').textContent = "黄金"; }
+        if (state.prestigeCount >= 5) { document.getElementById('opt-dark').disabled = false; document.getElementById('opt-dark').textContent = "漆黒"; }
+    }
+
+    function buy(id, growth) {
+        if (state.money >= state.cost[id]) {
+            state.money -= state.cost[id];
+            state.lv[id]++;
+            state.cost[id] = Math.floor(state.cost[id] * growth);
+            if (id === 'diceCount') { state.diceCount++; initDice(); }
+            if (id === 'auto' && state.lv.auto === 1) startAuto();
+            updateUI();
+            checkAchievements();
+        }
+    }
+
+    function getWeightedDiceRoll() {
+        let weights = [60, 30, 15, 8, 4, 2];
+        weights[5] += state.lv.luck * 10;
+        const totalWeight = weights.reduce((a, b) => a + b, 0);
+        let random = Math.random() * totalWeight;
+        for (let i = 0; i < weights.length; i++) {
+            if (random < weights[i]) return i + 1;
+            random -= weights[i];
+        }
+        return 6;
+    }
+
+    function rollSingle(idx) {
+        state.rollingStates[idx] = true;
+        const dEle = document.getElementById(`dice-${idx}`);
+        let count = 0;
+        const animLength = Math.max(3, (12 - state.lv.speed) + Math.floor(Math.random() * 5));
+        const anim = setInterval(() => {
+            let r = Math.floor(Math.random() * 6) + 1;
+            dEle.textContent = r;
+            dEle.style.transform = `scale(1.1) rotate(${Math.random()*20-10}deg)`;
+            if (++count > animLength) {
+                clearInterval(anim);
+                const finalVal = getWeightedDiceRoll();
+                state.values[idx] = finalVal;
+                dEle.textContent = finalVal;
+                dEle.style.transform = "scale(1) rotate(0deg)";
+                state.rollingStates[idx] = false;
+                if (!state.rollingStates.includes(true)) checkAllStopped();
+            }
+        }, 50);
+    }
+
+    function checkAllStopped() {
+        state.isAnyRolling = false;
+        let totalReward = 0;
+        const counts = {};
+        state.values.forEach(v => counts[v] = (counts[v] || 0) + 1);
+
+        const baseMult = (1 + (state.lv.value * 0.15)) * (1 + (state.lv.risk * 0.3)) * state.prestigeMult;
+        const baseTable = {1: 100, 2: 200, 3: 300, 4: 450, 5: 650, 6: 1000};
+
+        for (let num in counts) {
+            const count = counts[num];
+            if (count >= 2) {
+                const val = parseInt(num);
+                const tripleBonus = (count >= 3) ? (1 + (state.lv.triple * 0.7)) : 1;
+                const numPairs = (count * (count - 1)) / 2;
+                let base = baseTable[val];
+                if (val === 6) base *= (1 + (state.lv.super6 * 0.5));
+                base += (state.lv.base * 200);
+                totalReward += Math.floor(base * baseMult * tripleBonus * numPairs);
+            }
+        }
+
+        if (totalReward > 0) {
+            state.money += totalReward;
+            if (state.money > state.maxMoney) state.maxMoney = state.money;
+            log(`+ ¥${totalReward.toLocaleString()}`);
+        } else {
+            handleHazure();
+        }
+        updateUI();
+    }
+
+    function handleHazure() {
+        if (state.lv.risk > 0 && Math.random() < 0.15) {
+            const loss = 1000 * state.lv.risk;
+            state.money = Math.max(0, state.money - loss);
+            log(`ハズレ (契約違反: -¥${loss.toLocaleString()})`, "#e74c3c");
+        } else if (state.lv.insurance > 0) {
+            const back = state.lv.insurance * 100;
+            state.money += back;
+            log(`ハズレ (保険返金: +¥${back.toLocaleString()})`, "#3498db");
+        } else {
+            log("ハズレ");
+        }
+    }
+
+    function prestige() {
+        if (confirm("本当に転生しますか？\n資産とレベルはリセットされますが、永久倍率が +1.0 されます。")) {
+            state.prestigeCount++;
+            state.prestigeMult += 1.0;
+            state.money = 0;
+            state.diceCount = 2;
+            state.lv = { base:0, value:0, super6:0, luck:0, auto:0, speed:0, diceCount:2, insurance:0, risk:0, triple:0 };
+            state.cost = { base:1000, value:5000, super6:50000, luck:8000, auto:3000, speed:6000, diceCount:10000, insurance:15000, risk:100000, triple:200000 };
+            notify("世界が再構築されました。新たな力が宿っています。");
+            initDice();
+            updateUI();
+        }
+    }
+
+    function changeSkin(val) {
+        state.currentSkin = val;
+        initDice();
+    }
+
+    function initDice() {
+        const table = document.getElementById('diceTable');
+        table.innerHTML = '';
+        state.rollingStates = new Array(state.diceCount).fill(false);
+        state.values = new Array(state.diceCount).fill(1);
+        for (let i = 0; i < state.diceCount; i++) {
+            const d = document.createElement('div');
+            d.id = `dice-${i}`; d.className = `dice ${state.currentSkin}`; d.textContent = '1';
+            d.onclick = () => { if(!state.isAnyRolling) { state.isAnyRolling = true; for(let j=0; j<state.diceCount; j++) rollSingle(j); } };
+            table.appendChild(d);
+        }
+    }
+
+    function checkAchievements() {
+        if (state.money > 100000 && !state.ach1) { state.ach1=true; notify("実績: 成金（10万円突破）"); }
+        if (state.lv.diceCount >= 10 && !state.ach2) { state.ach2=true; notify("実績: 数の暴力（ダイス10個）"); }
+    }
+
+    function notify(msg) {
+        const div = document.getElementById('achievement');
+        div.textContent = msg;
+        div.style.top = "20px";
+        setTimeout(() => { div.style.top = "-100px"; }, 3000);
+    }
+
+    function log(m, color=null) {
+        const l = document.getElementById('gameLog');
+        l.textContent = m;
+        l.style.color = color || "var(--gold)";
+    }
+
+    function startAuto() {
+        setInterval(() => { if (!state.isAnyRolling) { state.isAnyRolling = true; for(let j=0; j<state.diceCount; j++) rollSingle(j); } }, Math.max(400, 3000 - (state.lv.auto * 350)));
+    }
+
+    initShop();
+    initDice();
+    updateUI();
+</script>
+</body>
+</html>
